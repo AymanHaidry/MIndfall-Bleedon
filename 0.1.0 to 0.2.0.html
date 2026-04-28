@@ -1,0 +1,1798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SYSADMIN — Terminal Management Game</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Courier+Prime:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0c0a;
+    --bg2: #0e110e;
+    --bg3: #111611;
+    --panel: #0d110d;
+    --border: #1a2e1a;
+    --border-bright: #2a4a2a;
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-dark: #003310;
+    --amber: #ffb000;
+    --red: #ff2244;
+    --red-dim: #aa1122;
+    --cyan: #00eeff;
+    --white: #c8e0c8;
+    --dim: #3a5a3a;
+    --scan: rgba(0,255,65,0.03);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* CRT scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  #root {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+
+  #header .logo {
+    font-family: 'VT323', monospace;
+    font-size: 26px;
+    color: var(--green);
+    letter-spacing: 4px;
+    text-shadow: 0 0 10px var(--green-dim);
+  }
+
+  #header .tagline {
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 2px;
+  }
+
+  #status-bar {
+    display: flex;
+    gap: 20px;
+    font-size: 11px;
+  }
+
+  .stat { display: flex; flex-direction: column; align-items: flex-end; }
+  .stat-label { color: var(--dim); font-size: 9px; letter-spacing: 1px; }
+  .stat-value { color: var(--green); font-size: 13px; }
+  .stat-value.warn { color: var(--amber); }
+  .stat-value.danger { color: var(--red); animation: blink 0.5s step-end infinite; }
+
+  /* ── MAIN LAYOUT ── */
+  #main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    overflow: hidden;
+  }
+
+  /* ── LEFT PANEL ── */
+  #left-panel {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg2);
+  }
+
+  #left-panel::-webkit-scrollbar { width: 4px; }
+  #left-panel::-webkit-scrollbar-track { background: transparent; }
+  #left-panel::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+  .panel-title {
+    font-family: 'VT323', monospace;
+    font-size: 16px;
+    color: var(--dim);
+    letter-spacing: 3px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+
+  /* Office Cards */
+  .office {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    position: relative;
+    transition: border-color 0.3s;
+    background: var(--panel);
+  }
+  .office.critical { border-color: var(--red-dim); }
+  .office.warning { border-color: var(--amber); }
+  .office.healthy { border-color: var(--green-dark); }
+  .office.offline { border-color: #333; opacity: 0.6; }
+  .office.isolated { border-color: var(--cyan); }
+
+  .office-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .office-name {
+    font-family: 'VT323', monospace;
+    font-size: 18px;
+    letter-spacing: 2px;
+  }
+
+  .office-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+    letter-spacing: 1px;
+  }
+
+  .badge-online { color: var(--green-dim); }
+  .badge-offline { color: #555; }
+  .badge-critical { color: var(--red); animation: blink 1s step-end infinite; }
+  .badge-isolated { color: var(--cyan); }
+  .badge-warning { color: var(--amber); }
+
+  .health-bar-wrap {
+    margin: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .bar-label { font-size: 9px; color: var(--dim); width: 34px; }
+
+  .bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    transition: width 0.5s ease, background 0.5s;
+  }
+
+  .bar-fill.health { background: var(--green-dim); }
+  .bar-fill.health.warn { background: var(--amber); }
+  .bar-fill.health.danger { background: var(--red); }
+  .bar-fill.heat { background: #ff6600; }
+  .bar-fill.load { background: var(--cyan); opacity: 0.7; }
+
+  .bar-val { font-size: 10px; width: 30px; text-align: right; color: var(--white); }
+
+  .office-threats {
+    font-size: 10px;
+    color: var(--red-dim);
+    margin-top: 4px;
+  }
+
+  .office-crew {
+    font-size: 10px;
+    color: var(--green-dim);
+    margin-top: 2px;
+  }
+
+  /* Resource section */
+  .resource-section {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    background: var(--panel);
+  }
+
+  .resource-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+
+  /* Crew section */
+  .crew-section {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    background: var(--panel);
+  }
+
+  .crew-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+
+  .crew-name { color: var(--white); }
+  .crew-count { color: var(--green-dim); }
+  .crew-assigned { color: var(--dim); font-size: 10px; }
+
+  /* Threats panel */
+  .threats-section {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    background: var(--panel);
+  }
+
+  .threat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+  }
+
+  .threat-row:last-child { border-bottom: none; }
+  .threat-name { color: var(--red); }
+  .threat-hidden { color: #555; font-style: italic; }
+  .threat-location { color: var(--amber); }
+  .threat-spread { color: var(--red-dim); font-size: 9px; }
+
+  /* ── RIGHT PANEL ── */
+  #right-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Log area */
+  #log-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.7;
+    background: var(--bg);
+  }
+
+  #log-area::-webkit-scrollbar { width: 4px; }
+  #log-area::-webkit-scrollbar-track { background: transparent; }
+  #log-area::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 1px 0;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .log-time { color: var(--dim); flex-shrink: 0; font-size: 11px; }
+  .log-msg { color: var(--white); }
+  .log-msg.info { color: var(--green-dim); }
+  .log-msg.warn { color: var(--amber); }
+  .log-msg.danger { color: var(--red); font-weight: bold; }
+  .log-msg.success { color: var(--green); }
+  .log-msg.system { color: var(--cyan); }
+  .log-msg.cmd { color: var(--white); }
+
+  /* ── BOTTOM: COMMAND INPUT ── */
+  #bottom {
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0;
+  }
+
+  /* Quick help ribbon */
+  #cmd-hint {
+    padding: 4px 14px;
+    font-size: 10px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.5px;
+  }
+
+  #cmd-hint span { color: var(--green-dim); margin-right: 14px; }
+
+  #input-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  #prompt {
+    color: var(--green);
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+
+  #cmd-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    caret-color: var(--green);
+  }
+
+  #cmd-input::placeholder { color: var(--dim); }
+
+  #enter-hint {
+    font-size: 10px;
+    color: var(--dim);
+    flex-shrink: 0;
+  }
+
+  /* Game over / win overlays */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #overlay.show { display: flex; }
+
+  #overlay-title {
+    font-family: 'VT323', monospace;
+    font-size: 72px;
+    letter-spacing: 8px;
+    text-shadow: 0 0 30px currentColor;
+  }
+
+  #overlay-title.gameover { color: var(--red); }
+  #overlay-title.win { color: var(--green); }
+
+  #overlay-msg {
+    font-size: 14px;
+    color: var(--white);
+    text-align: center;
+    max-width: 500px;
+    line-height: 1.8;
+  }
+
+  #overlay-btn {
+    margin-top: 10px;
+    padding: 10px 30px;
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+
+  #overlay-btn:hover {
+    background: var(--green-dark);
+    border-color: var(--green);
+    box-shadow: 0 0 12px var(--green-dim);
+  }
+
+  /* ── TUTORIAL SCREEN ── */
+  #tutorial {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 600;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #tut-header {
+    padding: 14px 24px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-shrink: 0;
+  }
+
+  #tut-header .logo-big {
+    font-family: 'VT323', monospace;
+    font-size: 52px;
+    color: var(--green);
+    letter-spacing: 10px;
+    text-shadow: 0 0 30px var(--green-dim);
+    animation: glitch 3s infinite;
+  }
+
+  #tut-header .sub {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 3px;
+  }
+
+  #tut-progress {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+
+  #tut-progress span { color: var(--green-dim); }
+
+  #tut-body {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Left: step list */
+  #tut-steps {
+    border-right: 1px solid var(--border);
+    padding: 14px 0;
+    overflow-y: auto;
+    background: var(--bg2);
+  }
+
+  .tut-step-item {
+    padding: 8px 18px;
+    font-size: 11px;
+    color: var(--dim);
+    cursor: default;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+    line-height: 1.5;
+  }
+
+  .tut-step-item.active {
+    color: var(--green);
+    border-left-color: var(--green-dim);
+    background: var(--green-dark);
+  }
+
+  .tut-step-item.done {
+    color: var(--green-dim);
+    border-left-color: transparent;
+  }
+
+  .tut-step-item.done::before { content: '✓ '; }
+  .tut-step-num { color: var(--dim); font-size: 10px; }
+
+  /* Right: terminal */
+  #tut-terminal {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #tut-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  #tut-log::-webkit-scrollbar { width: 4px; }
+  #tut-log::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .tut-line { animation: fadeIn 0.15s ease; }
+  .tut-line.sys { color: var(--cyan); }
+  .tut-line.info { color: var(--green-dim); }
+  .tut-line.warn { color: var(--amber); }
+  .tut-line.success { color: var(--green); }
+  .tut-line.danger { color: var(--red); }
+  .tut-line.dim { color: var(--dim); }
+  .tut-line.white { color: var(--white); }
+  .tut-line.cmd { color: var(--white); font-style: italic; }
+  .tut-line.blank { height: 6px; }
+  .tut-line.header {
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    color: var(--green);
+    letter-spacing: 3px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+  }
+
+  /* Hint box */
+  #tut-hint-box {
+    margin: 0 20px 0;
+    padding: 8px 14px;
+    border: 1px solid var(--border-bright);
+    background: var(--green-dark);
+    font-size: 11px;
+    color: var(--white);
+    line-height: 1.7;
+    display: none;
+  }
+
+  #tut-hint-box.show { display: block; }
+  #tut-hint-box strong { color: var(--green); }
+
+  /* Input row */
+  #tut-input-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+
+  #tut-prompt {
+    color: var(--green);
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+
+  #tut-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    caret-color: var(--green);
+  }
+
+  #tut-input::placeholder { color: var(--dim); }
+
+  #tut-skip {
+    font-size: 10px;
+    color: var(--dim);
+    cursor: pointer;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  #tut-skip:hover { color: var(--amber); border-color: var(--amber); }
+
+  /* Startup screen (legacy — now hidden behind tutorial) */
+  #startup { display: none; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes pulse-border { 0%,100% { border-color: var(--green-dim); } 50% { border-color: var(--green); box-shadow: 0 0 10px var(--green-dim); } }
+  @keyframes glitch {
+    0%,90%,100% { text-shadow: 0 0 40px var(--green-dim); transform: none; }
+    92% { text-shadow: -2px 0 var(--red), 2px 0 var(--cyan); transform: translate(1px, 0); }
+    94% { text-shadow: 2px 0 var(--red), -2px 0 var(--cyan); transform: translate(-1px, 0); }
+    96% { text-shadow: 0 0 40px var(--green-dim); transform: none; }
+  }
+
+  @keyframes scan-line {
+    0% { top: -5%; }
+    100% { top: 105%; }
+  }
+
+  .scan-sweep {
+    position: fixed;
+    left: 0; right: 0;
+    height: 2px;
+    background: rgba(0,255,65,0.07);
+    animation: scan-line 6s linear infinite;
+    pointer-events: none;
+    z-index: 998;
+  }
+</style>
+</head>
+<body>
+
+<div class="scan-sweep"></div>
+
+<!-- Tutorial Screen -->
+<div id="tutorial">
+  <div id="tut-header">
+    <div class="logo-big">SYSADMIN</div>
+    <div class="sub">ONBOARDING TERMINAL v1.0.0</div>
+    <div id="tut-progress">LESSON <span id="tut-step-num">1</span> / <span id="tut-step-total">7</span></div>
+  </div>
+  <div id="tut-body">
+    <div id="tut-steps"></div>
+    <div id="tut-terminal">
+      <div id="tut-log"></div>
+      <div id="tut-hint-box"></div>
+      <div id="tut-input-row">
+        <span id="tut-prompt">trainee@SYSADMIN:~$</span>
+        <input id="tut-input" type="text" placeholder="type command and press ENTER..." autocomplete="off" spellcheck="false" />
+        <span id="tut-skip" onclick="skipTutorial()">SKIP TUTORIAL</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Legacy startup (unused) -->
+<div id="startup"></div>
+
+<!-- Game Over / Win Overlay -->
+<div id="overlay">
+  <div id="overlay-title" class="gameover">SYSTEM FAILURE</div>
+  <div id="overlay-msg"></div>
+  <button id="overlay-btn" onclick="resetGame()">[ RESTART SYSTEM ]</button>
+</div>
+
+<!-- Main Game UI -->
+<div id="root">
+  <div id="header">
+    <div>
+      <div class="logo">SYSADMIN</div>
+      <div class="tagline">TERMINAL MANAGEMENT SYSTEM</div>
+    </div>
+    <div id="status-bar">
+      <div class="stat">
+        <span class="stat-label">UPTIME</span>
+        <span class="stat-value" id="stat-uptime">00:00</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">USERS</span>
+        <span class="stat-value" id="stat-users">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">SATISFACTION</span>
+        <span class="stat-value" id="stat-sat">100%</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">COMPANY VALUE</span>
+        <span class="stat-value" id="stat-value">$1000</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">POWER</span>
+        <span class="stat-value" id="stat-power">100%</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="main">
+    <!-- LEFT -->
+    <div id="left-panel">
+      <div>
+        <div class="panel-title">// OFFICES</div>
+        <div id="offices-container"></div>
+      </div>
+
+      <div class="resource-section">
+        <div class="panel-title">// RESOURCES</div>
+        <div class="resource-row">
+          <span class="bar-label">POWER</span>
+          <div class="bar-track"><div class="bar-fill load" id="bar-power" style="width:100%"></div></div>
+          <span class="bar-val" id="val-power">100</span>
+        </div>
+        <div class="resource-row">
+          <span class="bar-label">HEAT</span>
+          <div class="bar-track"><div class="bar-fill heat" id="bar-heat" style="width:0%"></div></div>
+          <span class="bar-val" id="val-heat">0</span>
+        </div>
+        <div class="resource-row">
+          <span class="bar-label">INCOME</span>
+          <div class="bar-track"><div class="bar-fill load" id="bar-income" style="width:50%"></div></div>
+          <span class="bar-val" id="val-income">+$5</span>
+        </div>
+      </div>
+
+      <div class="crew-section">
+        <div class="panel-title">// CREW</div>
+        <div id="crew-container"></div>
+      </div>
+
+      <div class="threats-section">
+        <div class="panel-title">// THREAT BOARD</div>
+        <div id="threats-container"><div style="color:var(--dim);font-size:11px">No known threats.</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: LOGS -->
+    <div id="right-panel">
+      <div id="log-area"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM INPUT -->
+  <div id="bottom">
+    <div id="cmd-hint">
+      <span>status</span><span>scan</span><span>help</span><span>assign [crew] [office]</span><span>firewall on/off</span><span>purge [threat]</span><span>isolate [office]</span><span>trace</span><span>repair [office]</span>
+    </div>
+    <div id="input-row">
+      <span id="prompt">root@SYSADMIN:~$</span>
+      <input id="cmd-input" type="text" placeholder="enter command..." autocomplete="off" spellcheck="false" />
+      <span id="enter-hint">ENTER ↵</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════
+let G = {};
+let gameLoop = null;
+let uptimeInterval = null;
+
+function initState() {
+  G = {
+    running: false,
+    gameover: false,
+    startTime: Date.now(),
+    tick: 0,
+    // Resources
+    power: 100,
+    heat: 0,
+    companyValue: 1000,
+    users: 500,
+    satisfaction: 100,
+    income: 5,
+    // Offices
+    offices: {
+      hq: { name: 'HQ', label: '🏢 HQ', health: 100, load: 30, heat: 0, online: true, isolated: false, crew: { engineers: 0, security: 0, cooling: 0 }, critical: true },
+      ops: { name: 'OPS', label: '⚙ OPERATIONS', health: 100, load: 40, heat: 0, online: true, isolated: false, crew: { engineers: 0, security: 0, cooling: 0 }, critical: false },
+      sec: { name: 'SEC', label: '🛡 SECURITY', health: 100, load: 20, heat: 0, online: true, isolated: false, crew: { engineers: 0, security: 0, cooling: 0 }, critical: false },
+    },
+    // Crew pool
+    crew: {
+      engineers: { total: 4, assigned: 0 },
+      security: { total: 3, assigned: 0 },
+      cooling: { total: 2, assigned: 0 },
+    },
+    // Threats
+    threats: [],
+    nextThreatId: 1,
+    firewallOn: false,
+    // History
+    cmdHistory: [],
+    cmdHistIdx: -1,
+  };
+}
+
+// ═══════════════════════════════════════════════
+//  TUTORIAL ENGINE
+// ═══════════════════════════════════════════════
+
+const TUTORIAL_STEPS = [
+  {
+    title: 'Welcome',
+    intro: [
+      { t: 'sys',  m: '════════════════════════════════════════' },
+      { t: 'header', m: 'WELCOME, ADMINISTRATOR' },
+      { t: 'sys',  m: '════════════════════════════════════════' },
+      { t: 'blank' },
+      { t: 'white', m: 'You are the System Administrator of a tech company.' },
+      { t: 'white', m: 'Your job: keep systems online, defend against attacks,' },
+      { t: 'white', m: 'manage your crew, and prevent total collapse.' },
+      { t: 'blank' },
+      { t: 'warn',  m: '⚠  HQ is the heart of the system. If HQ dies → GAME OVER.' },
+      { t: 'blank' },
+      { t: 'info',  m: 'This terminal will teach you everything you need.' },
+      { t: 'info',  m: 'Type commands to interact. Follow each lesson.' },
+      { t: 'blank' },
+      { t: 'sys',  m: 'Type  status  to begin.' },
+    ],
+    prompt: 'Type: status',
+    expect: 'status',
+    hint: '<strong>status</strong> shows the current state of all offices, resources, and threats. You\'ll use this constantly.',
+    success: [
+      { t: 'success', m: '✓ Good. The status command gives you a full snapshot.' },
+      { t: 'info',    m: 'You can see: office health, load, heat, power, users, company value.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER to continue to the next lesson.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'The 3 Offices',
+    intro: [
+      { t: 'header', m: 'LESSON 2 — THE OFFICES' },
+      { t: 'blank' },
+      { t: 'white', m: 'Your company runs 3 offices. Each handles a critical role.' },
+      { t: 'blank' },
+      { t: 'success', m: '🏢 HQ  (hq)' },
+      { t: 'info',    m: '   Handles user data and authentication.' },
+      { t: 'danger',  m: '   ⚠ If HQ health hits 0 → GAME OVER immediately.' },
+      { t: 'blank' },
+      { t: 'success', m: '⚙  OPERATIONS  (ops)' },
+      { t: 'info',    m: '   Handles traffic routing and processing load.' },
+      { t: 'warn',    m: '   If offline: system slows, users get frustrated.' },
+      { t: 'blank' },
+      { t: 'success', m: '🛡  SECURITY  (sec)' },
+      { t: 'info',    m: '   Handles threat detection and firewall systems.' },
+      { t: 'warn',    m: '   If offline: threats hide, attacks succeed more.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Each office has: HEALTH  LOAD  HEAT' },
+      { t: 'dim',    m: 'Health drops when attacked or overheated.' },
+      { t: 'dim',    m: 'Load increases under traffic pressure.' },
+      { t: 'dim',    m: 'Heat rises with load — high heat damages health.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Type  scan  to check for threats.' },
+    ],
+    prompt: 'Type: scan',
+    expect: 'scan',
+    hint: '<strong>scan</strong> looks for threats across all offices. It costs a little power and heat, but reveals what\'s hiding in your systems.',
+    success: [
+      { t: 'success', m: '✓ Scan complete. No threats yet — but they\'re coming.' },
+      { t: 'info',    m: 'Remember: some threats are HIDDEN. scan reveals some of them.' },
+      { t: 'info',    m: 'Use  trace  for a deep scan that reveals ALL hidden threats (costs more power).' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER for the next lesson.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'Threats',
+    intro: [
+      { t: 'header', m: 'LESSON 3 — THREATS' },
+      { t: 'blank' },
+      { t: 'white', m: 'Three types of attackers will target your system:' },
+      { t: 'blank' },
+      { t: 'danger', m: '🦠 MALWARE' },
+      { t: 'info',   m: '   Slowly drains office health over time.' },
+      { t: 'info',   m: '   Fix with:  purge [id]' },
+      { t: 'blank' },
+      { t: 'danger', m: '💥 DDOS' },
+      { t: 'info',   m: '   Floods the office with traffic — spikes load to max.' },
+      { t: 'info',   m: '   Fix with:  purge [id]  or  ddos-shield  for all at once.' },
+      { t: 'blank' },
+      { t: 'danger', m: '🐛 WORM' },
+      { t: 'info',   m: '   Drains health AND spreads to other offices after ~15s.' },
+      { t: 'warn',   m: '   Isolate the infected office fast to stop spread.' },
+      { t: 'blank' },
+      { t: 'sys',   m: 'Threats have IDs. Example: [ID:3] MALWARE @ OPS' },
+      { t: 'sys',   m: 'To destroy it:  purge 3' },
+      { t: 'blank' },
+      { t: 'white', m: 'Some threats spawn HIDDEN. They still deal damage.' },
+      { t: 'white', m: 'Use  scan  or  trace  to find them.' },
+      { t: 'blank' },
+      { t: 'sys',   m: 'Type  firewall on  to see how to protect yourself.' },
+    ],
+    prompt: 'Type: firewall on',
+    expect: 'firewall on',
+    hint: 'The <strong>firewall</strong> increases your purge success rate and slows attacks. It costs extra power while running. Toggle with <strong>firewall on</strong> / <strong>firewall off</strong>.',
+    success: [
+      { t: 'success', m: '✓ Firewall is now active.' },
+      { t: 'info',    m: 'Firewall ON: purge success rate rises from 65% → 85%.' },
+      { t: 'warn',    m: 'Downside: extra power drain while active. Manage your power.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER to continue.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'Crew',
+    intro: [
+      { t: 'header', m: 'LESSON 4 — CREW SYSTEM' },
+      { t: 'blank' },
+      { t: 'white', m: 'You have a crew of specialists. Assign them to offices.' },
+      { t: 'blank' },
+      { t: 'success', m: '🔧 ENGINEERS' },
+      { t: 'info',    m: '   Slowly auto-repair office health each tick.' },
+      { t: 'blank' },
+      { t: 'success', m: '🛡  SECURITY' },
+      { t: 'info',    m: '   Chance each tick to detect hidden threats automatically.' },
+      { t: 'blank' },
+      { t: 'success', m: '❄️  COOLING' },
+      { t: 'info',    m: '   Reduce heat each tick — prevents heat damage.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Command syntax:' },
+      { t: 'white',  m: '  assign engineers hq' },
+      { t: 'white',  m: '  assign security sec' },
+      { t: 'white',  m: '  assign cooling ops' },
+      { t: 'white',  m: '  unassign engineers hq  ← moves them back to pool' },
+      { t: 'blank' },
+      { t: 'warn',   m: 'Crew are limited. You start with: 4 engineers, 3 security, 2 cooling.' },
+      { t: 'blank' },
+      { t: 'sys',   m: 'Try it: type  assign engineers hq' },
+    ],
+    prompt: 'Type: assign engineers hq',
+    expect: 'assign engineers hq',
+    hint: 'Assign <strong>engineers</strong> to HQ to slowly auto-repair it. Assign <strong>cooling</strong> to hot offices. Assign <strong>security</strong> to offices under threat.',
+    success: [
+      { t: 'success', m: '✓ Engineer assigned to HQ. They will auto-repair HQ each tick.' },
+      { t: 'info',    m: 'Smart crew placement = the difference between survival and collapse.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER to continue.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'Repair & Isolate',
+    intro: [
+      { t: 'header', m: 'LESSON 5 — EMERGENCY ACTIONS' },
+      { t: 'blank' },
+      { t: 'white', m: 'When things go bad, you have emergency tools:' },
+      { t: 'blank' },
+      { t: 'success', m: 'repair [office]' },
+      { t: 'info',    m: '  Emergency patch. Instantly adds +25 HP. Costs 10 power.' },
+      { t: 'info',    m: '  Example:  repair hq' },
+      { t: 'blank' },
+      { t: 'success', m: 'isolate [office]' },
+      { t: 'info',    m: '  Cuts an office off the network. Stops worm spread.' },
+      { t: 'warn',    m: '  The office goes offline while isolated.' },
+      { t: 'warn',    m: '  ⚠ Do NOT isolate HQ — instant game over.' },
+      { t: 'info',    m: '  To bring it back:  restart [office]' },
+      { t: 'blank' },
+      { t: 'success', m: 'restart [office]' },
+      { t: 'info',    m: '  Brings an offline office back online. Costs 20 power.' },
+      { t: 'blank' },
+      { t: 'success', m: 'overclock [office]' },
+      { t: 'info',    m: '  Reduces load by 20% — but adds +25 heat. Risky.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Type  repair ops  to practice an emergency repair.' },
+    ],
+    prompt: 'Type: repair ops',
+    expect: 'repair ops',
+    hint: '<strong>repair</strong> costs 10 power but gives a quick 25 HP boost. Use it when an office is dropping fast and your engineers can\'t keep up.',
+    success: [
+      { t: 'success', m: '✓ OPS patched. Power spent, health recovered.' },
+      { t: 'warn',    m: 'Power is limited. Every command costs some.' },
+      { t: 'info',    m: 'Power regenerates slowly on its own — don\'t spam commands.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER to continue.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'Resources & Value',
+    intro: [
+      { t: 'header', m: 'LESSON 6 — RESOURCES & COMPANY VALUE' },
+      { t: 'blank' },
+      { t: 'success', m: '⚡ POWER' },
+      { t: 'info',    m: '  Commands cost power. Firewall drains extra per tick.' },
+      { t: 'info',    m: '  Power slowly recharges. Watch the bar — don\'t hit 0.' },
+      { t: 'blank' },
+      { t: 'success', m: '🔥 HEAT' },
+      { t: 'info',    m: '  High load = rising heat. Heat > 90% → health damage.' },
+      { t: 'info',    m: '  Cooling crew, rerouting traffic, and overclock help.' },
+      { t: 'blank' },
+      { t: 'success', m: '📈 COMPANY VALUE' },
+      { t: 'info',    m: '  Your score. Rises with uptime + happy users.' },
+      { t: 'info',    m: '  Falls when threats are active or offices go down.' },
+      { t: 'danger',  m: '  ⚠ If Company Value hits $0 → GAME OVER.' },
+      { t: 'blank' },
+      { t: 'success', m: '👥 USERS & SATISFACTION' },
+      { t: 'info',    m: '  More users = more income = company value grows.' },
+      { t: 'info',    m: '  Low satisfaction = users leave = income drops.' },
+      { t: 'info',    m: '  Keep HQ + OPS healthy to keep users happy.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Type  status  to review everything one last time.' },
+    ],
+    prompt: 'Type: status',
+    expect: 'status',
+    hint: 'Run <strong>status</strong> regularly to monitor all systems. Fast detection = fast response = survival.',
+    success: [
+      { t: 'success', m: '✓ Full status review complete.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Press ENTER for the final lesson.' },
+    ],
+    autoNext: true,
+  },
+  {
+    title: 'Ready',
+    intro: [
+      { t: 'header', m: 'LESSON 7 — QUICK REFERENCE' },
+      { t: 'blank' },
+      { t: 'sys',   m: '── BASIC ─────────────────────────────────' },
+      { t: 'white', m: '  status              full system overview' },
+      { t: 'white', m: '  scan                detect threats (costs power)' },
+      { t: 'white', m: '  trace               reveal ALL hidden threats (costs more)' },
+      { t: 'white', m: '  help                full command list in-game' },
+      { t: 'blank' },
+      { t: 'sys',   m: '── DEFENSE ───────────────────────────────' },
+      { t: 'white', m: '  firewall on/off     toggle firewall protection' },
+      { t: 'white', m: '  purge [id]          destroy a visible threat' },
+      { t: 'white', m: '  isolate [office]    cut office off (stops worm spread)' },
+      { t: 'white', m: '  ddos-shield         nuke all DDoS attacks (costs 25 power)' },
+      { t: 'blank' },
+      { t: 'sys',   m: '── MAINTENANCE ───────────────────────────' },
+      { t: 'white', m: '  repair [office]     +25 HP (costs 10 power)' },
+      { t: 'white', m: '  restart [office]    bring offline office back' },
+      { t: 'white', m: '  overclock [office]  reduce load, raise heat (risky)' },
+      { t: 'white', m: '  reroute [a] [b]     move traffic from a to b' },
+      { t: 'blank' },
+      { t: 'sys',   m: '── CREW ──────────────────────────────────' },
+      { t: 'white', m: '  assign [type] [office]    assign crew' },
+      { t: 'white', m: '  unassign [type] [office]  remove crew' },
+      { t: 'blank' },
+      { t: 'warn',  m: '★  Remember: HQ must never fall. Protect it above all.' },
+      { t: 'blank' },
+      { t: 'sys',   m: 'Type  launch  when you are ready to begin.' },
+    ],
+    prompt: 'Type: launch',
+    expect: 'launch',
+    hint: 'You\'ve learned everything. Type <strong>launch</strong> to initialize the real system and begin your shift.',
+    success: [
+      { t: 'success', m: '✓ Administrator credentials verified.' },
+      { t: 'success', m: '✓ Onboarding complete.' },
+      { t: 'blank' },
+      { t: 'sys',    m: 'Initializing live system...' },
+    ],
+    autoNext: false,
+    onComplete: () => {
+      setTimeout(() => {
+        document.getElementById('tutorial').style.display = 'none';
+        startGame();
+      }, 1200);
+    },
+  },
+];
+
+let tutStep = 0;
+let tutWaitingForEnter = false;
+
+function tutLog(lines) {
+  const log = document.getElementById('tut-log');
+  let delay = 0;
+  lines.forEach(l => {
+    setTimeout(() => {
+      if (l.t === 'blank') {
+        const d = document.createElement('div');
+        d.className = 'tut-line blank';
+        log.appendChild(d);
+      } else {
+        const d = document.createElement('div');
+        d.className = `tut-line ${l.t}`;
+        d.textContent = l.m;
+        log.appendChild(d);
+      }
+      log.scrollTop = log.scrollHeight;
+    }, delay);
+    delay += l.t === 'blank' ? 30 : 55;
+  });
+  return delay;
+}
+
+function renderTutSteps() {
+  const container = document.getElementById('tut-steps');
+  container.innerHTML = '';
+  TUTORIAL_STEPS.forEach((s, i) => {
+    const d = document.createElement('div');
+    d.className = 'tut-step-item' + (i === tutStep ? ' active' : i < tutStep ? ' done' : '');
+    d.innerHTML = `<span class="tut-step-num">0${i+1}</span>  ${s.title}`;
+    container.appendChild(d);
+  });
+  document.getElementById('tut-step-num').textContent = tutStep + 1;
+  document.getElementById('tut-step-total').textContent = TUTORIAL_STEPS.length;
+}
+
+function showTutStep(idx) {
+  tutStep = idx;
+  tutWaitingForEnter = false;
+  const step = TUTORIAL_STEPS[idx];
+  const log = document.getElementById('tut-log');
+  log.innerHTML = '';
+  renderTutSteps();
+
+  // Show hint box
+  const hint = document.getElementById('tut-hint-box');
+  hint.innerHTML = '💡 ' + step.hint;
+  hint.classList.add('show');
+
+  // Update prompt placeholder
+  document.getElementById('tut-input').placeholder = step.prompt;
+  document.getElementById('tut-input').value = '';
+  document.getElementById('tut-input').focus();
+
+  tutLog(step.intro);
+}
+
+function tutHandleInput(raw) {
+  const step = TUTORIAL_STEPS[tutStep];
+  const inp = document.getElementById('tut-input');
+
+  // Waiting for ENTER to advance
+  if (tutWaitingForEnter) {
+    tutWaitingForEnter = false;
+    if (tutStep + 1 < TUTORIAL_STEPS.length) {
+      showTutStep(tutStep + 1);
+    }
+    return;
+  }
+
+  if (!raw) return;
+  inp.value = '';
+
+  // Echo command
+  const log = document.getElementById('tut-log');
+  const echo = document.createElement('div');
+  echo.className = 'tut-line cmd';
+  echo.textContent = '> ' + raw;
+  log.appendChild(echo);
+  log.scrollTop = log.scrollHeight;
+
+  if (raw.toLowerCase().trim() === step.expect.toLowerCase()) {
+    // Correct!
+    const delay = tutLog(step.success);
+    renderTutSteps();
+    document.getElementById('tut-hint-box').classList.remove('show');
+
+    if (step.onComplete) {
+      setTimeout(step.onComplete, delay + 200);
+    } else if (step.autoNext) {
+      // Wait for enter to go next
+      setTimeout(() => {
+        tutWaitingForEnter = true;
+        inp.placeholder = 'press ENTER to continue...';
+      }, delay + 100);
+    }
+  } else {
+    // Wrong command
+    const d = document.createElement('div');
+    d.className = 'tut-line warn';
+    d.textContent = `✗ Not quite. Try:  ${step.expect}`;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function skipTutorial() {
+  document.getElementById('tutorial').style.display = 'none';
+  startGame();
+}
+
+// Boot tutorial on load
+document.addEventListener('DOMContentLoaded', () => {
+  showTutStep(0);
+});
+
+document.getElementById('tut-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    tutHandleInput(document.getElementById('tut-input').value.trim());
+  }
+});
+
+function startGame() {
+  document.getElementById('startup').style.display = 'none';
+  initState();
+  G.running = true;
+  log('System initialized. Type [help] for command list.', 'system');
+  log('WARNING: Threats expected. Stay vigilant.', 'warn');
+  log('Company value: $1000. Do not let it drop to 0.', 'info');
+  renderAll();
+  gameLoop = setInterval(tick, 1000);
+  uptimeInterval = setInterval(updateUptime, 1000);
+  document.getElementById('cmd-input').focus();
+}
+
+// ═══════════════════════════════════════════════
+//  GAME TICK
+// ═══════════════════════════════════════════════
+function tick() {
+  if (!G.running || G.gameover) return;
+  G.tick++;
+
+  // ── Heat generation from load
+  let totalLoad = 0;
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    if (o.online && !o.isolated) {
+      o.heat = Math.min(100, o.heat + (o.load / 100) * 2);
+      totalLoad += o.load;
+      // Cooling crew reduces heat
+      o.heat = Math.max(0, o.heat - o.crew.cooling * 3);
+    }
+  }
+  G.heat = Math.min(100, (G.offices.hq.heat + G.offices.ops.heat + G.offices.sec.heat) / 3);
+
+  // ── Power drain
+  let powerDrain = 1;
+  if (G.firewallOn) powerDrain += 1;
+  for (let k in G.offices) {
+    if (G.offices[k].online) powerDrain += 0.5;
+  }
+  G.power = Math.max(0, Math.min(100, G.power - powerDrain * 0.3 + 0.5));
+
+  // ── Threat spreading & damage
+  G.threats.forEach(t => {
+    if (t.hidden) return;
+    const o = G.offices[t.office];
+    if (!o) return;
+
+    // Malware: slow damage
+    if (t.type === 'malware') {
+      if (o.online) {
+        o.health = Math.max(0, o.health - (2 + t.severity));
+        t.progress = (t.progress || 0) + 1;
+      }
+    }
+    // DDoS: increases load
+    if (t.type === 'ddos') {
+      o.load = Math.min(100, o.load + 3);
+    }
+    // Worm: spreads after a while
+    if (t.type === 'worm') {
+      o.health = Math.max(0, o.health - 1);
+      t.spreadTimer = (t.spreadTimer || 0) + 1;
+      if (t.spreadTimer >= 15 && !t.spread) {
+        const targets = Object.keys(G.offices).filter(k => k !== t.office);
+        const spreadTo = targets[Math.floor(Math.random() * targets.length)];
+        spawnThreat('worm', spreadTo, false, t.severity);
+        t.spread = true;
+        log(`⚠ WORM spread from ${t.office.toUpperCase()} to ${spreadTo.toUpperCase()}!`, 'danger');
+      }
+    }
+  });
+
+  // ── Security crew: chance to auto-detect hidden threats
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    if (o.crew.security > 0) {
+      G.threats.forEach(t => {
+        if (t.hidden && t.office === k && Math.random() < o.crew.security * 0.05) {
+          t.hidden = false;
+          log(`Security crew detected hidden ${t.type.toUpperCase()} in ${k.toUpperCase()}!`, 'warn');
+        }
+      });
+    }
+  }
+
+  // ── Engineers auto-repair slowly
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    if (o.crew.engineers > 0 && o.health < 100) {
+      o.health = Math.min(100, o.health + o.crew.engineers * 0.5);
+    }
+  }
+
+  // ── Heat critical damage
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    if (o.heat >= 90 && o.online) {
+      o.health = Math.max(0, o.health - 3);
+      if (Math.random() < 0.1) log(`🔥 CRITICAL HEAT in ${k.toUpperCase()}!`, 'danger');
+    }
+  }
+
+  // ── Office failure
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    if (o.health <= 0 && o.online) {
+      o.online = false;
+      o.health = 0;
+      log(`💀 ${k.toUpperCase()} OFFICE IS DOWN!`, 'danger');
+      if (o.critical) { triggerGameOver(`HQ server has failed. All data lost.`); return; }
+      if (k === 'sec') {
+        log('⚠ Security offline: threats now harder to detect!', 'warn');
+        G.threats.forEach(t => { if (!t.hidden && Math.random() < 0.5) t.hidden = true; });
+      }
+    }
+  }
+
+  // ── User satisfaction
+  let satChange = 0;
+  if (!G.offices.hq.online) satChange -= 5;
+  if (!G.offices.ops.online) satChange -= 2;
+  if (G.offices.ops.load > 80) satChange -= 1;
+  if (G.offices.hq.health > 80 && G.offices.ops.online) satChange += 0.3;
+  G.satisfaction = Math.max(0, Math.min(100, G.satisfaction + satChange));
+
+  // Users leave if satisfaction low
+  if (G.satisfaction < 30) G.users = Math.max(0, G.users - Math.floor(Math.random() * 10 + 5));
+  else if (G.satisfaction > 80 && G.tick % 5 === 0) G.users = Math.min(5000, G.users + Math.floor(Math.random() * 5 + 2));
+
+  // ── Income & company value
+  G.income = Math.floor((G.users / 100) * (G.satisfaction / 100) * 0.5);
+  G.companyValue = Math.max(0, G.companyValue + G.income - (G.threats.filter(t=>!t.hidden).length * 2));
+
+  if (G.companyValue <= 0) { triggerGameOver('Company value has reached $0. Business bankrupt.'); return; }
+
+  // ── Spawn threats (difficulty ramps)
+  const difficultyFactor = Math.min(1, G.tick / 300);
+  const spawnChance = 0.05 + difficultyFactor * 0.12;
+  if (Math.random() < spawnChance) {
+    const types = ['malware', 'ddos', 'worm'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const officeKeys = Object.keys(G.offices);
+    const office = officeKeys[Math.floor(Math.random() * officeKeys.length)];
+    const hidden = Math.random() < (G.offices.sec.online ? 0.3 : 0.6);
+    const sev = Math.floor(difficultyFactor * 3) + 1;
+    spawnThreat(type, office, hidden, sev);
+    if (!hidden) log(`⚠ ${type.toUpperCase()} detected in ${office.toUpperCase()}! [severity: ${sev}]`, 'warn');
+    else log(`⚠ Anomalous activity detected. Run [scan] to investigate.`, 'warn');
+  }
+
+  // ── Random events
+  if (G.tick % 30 === 0) {
+    const events = [
+      { msg: 'Traffic spike: OPS load +15', fn: () => G.offices.ops.load = Math.min(100, G.offices.ops.load + 15) },
+      { msg: 'Power surge detected!', fn: () => { G.power = Math.max(10, G.power - 15); } },
+      { msg: 'User surge: +50 users joined.', fn: () => G.users += 50 },
+    ];
+    if (Math.random() < 0.4) {
+      const ev = events[Math.floor(Math.random() * events.length)];
+      ev.fn();
+      log(`📡 EVENT: ${ev.msg}`, 'info');
+    }
+  }
+
+  // ── Clean dead threats
+  G.threats = G.threats.filter(t => {
+    const o = G.offices[t.office];
+    return o && !(t.type === 'ddos' && !o.online);
+  });
+
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════
+//  SPAWN THREAT
+// ═══════════════════════════════════════════════
+function spawnThreat(type, office, hidden, severity) {
+  G.threats.push({
+    id: G.nextThreatId++,
+    type,
+    office,
+    hidden,
+    severity: severity || 1,
+    spreadTimer: 0,
+    spread: false,
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  COMMANDS
+// ═══════════════════════════════════════════════
+const COMMANDS = {
+  help: () => {
+    log('═══ COMMAND REFERENCE ═══', 'system');
+    log('status            — full system overview', 'info');
+    log('scan              — detect hidden threats', 'info');
+    log('assign [type] [office] — assign crew (engineers/security/cooling) to hq/ops/sec', 'info');
+    log('unassign [type] [office] — remove crew from office', 'info');
+    log('firewall on/off   — toggle firewall (+power cost, -attack success)', 'info');
+    log('isolate [office]  — isolate office (stops spread, goes offline)', 'info');
+    log('repair [office]   — emergency repair (costs power)', 'info');
+    log('purge [id]        — destroy threat by ID (costly)', 'info');
+    log('trace             — advanced scan, reveals all hidden threats', 'info');
+    log('overclock [office]— boost performance (heat risk)', 'info');
+    log('restart [office]  — restart an offline office', 'info');
+    log('ddos-shield       — temporary DDoS protection (big power cost)', 'info');
+    log('status            — current system stats', 'info');
+  },
+
+  status: () => {
+    log('═══ SYSTEM STATUS ═══', 'system');
+    log(`Company Value: $${G.companyValue}  Users: ${G.users}  Satisfaction: ${G.satisfaction.toFixed(0)}%`, 'info');
+    log(`Power: ${G.power.toFixed(0)}%  Global Heat: ${G.heat.toFixed(0)}%  Firewall: ${G.firewallOn ? 'ON' : 'OFF'}`, 'info');
+    for (let k in G.offices) {
+      const o = G.offices[k];
+      const state = o.isolated ? 'ISOLATED' : o.online ? 'ONLINE' : 'OFFLINE';
+      log(`${k.toUpperCase()}: ${state} | HP: ${o.health.toFixed(0)}% | Load: ${o.load.toFixed(0)}% | Heat: ${o.heat.toFixed(0)}%`, o.online ? 'info' : 'warn');
+    }
+    const visible = G.threats.filter(t => !t.hidden);
+    log(`Known Threats: ${visible.length} | Hidden: ${G.threats.filter(t=>t.hidden).length} (unknown)`, visible.length > 0 ? 'warn' : 'info');
+  },
+
+  scan: (args) => {
+    log('Running scan...', 'system');
+    const visible = G.threats.filter(t => !t.hidden);
+    // Scan may reveal some hidden threats
+    let revealed = 0;
+    G.threats.forEach(t => {
+      if (t.hidden && Math.random() < (G.offices.sec.online ? 0.5 : 0.25)) {
+        t.hidden = false;
+        revealed++;
+      }
+    });
+    if (revealed > 0) log(`Scan revealed ${revealed} hidden threat(s)!`, 'warn');
+    if (visible.length === 0 && revealed === 0) log('No active threats detected. Stay alert.', 'success');
+    else {
+      G.threats.filter(t => !t.hidden).forEach(t => {
+        log(`  [ID:${t.id}] ${t.type.toUpperCase()} @ ${t.office.toUpperCase()} | sev:${t.severity}`, 'warn');
+      });
+    }
+    G.power = Math.max(0, G.power - 3);
+    G.heat = Math.min(100, G.heat + 2);
+  },
+
+  trace: () => {
+    if (G.power < 15) { log('Insufficient power for trace operation.', 'danger'); return; }
+    log('Running deep trace... all threats exposed.', 'system');
+    let count = 0;
+    G.threats.forEach(t => { if (t.hidden) { t.hidden = false; count++; } });
+    log(`Trace complete. ${count} hidden threat(s) revealed.`, count > 0 ? 'warn' : 'success');
+    G.power -= 15;
+    G.heat = Math.min(100, G.heat + 8);
+  },
+
+  firewall: (args) => {
+    const mode = args[0];
+    if (mode === 'on') {
+      G.firewallOn = true;
+      log('Firewall ENABLED. Attacks less likely to succeed.', 'success');
+    } else if (mode === 'off') {
+      G.firewallOn = false;
+      log('Firewall DISABLED. System exposed.', 'warn');
+    } else {
+      log('Usage: firewall on | firewall off', 'warn');
+    }
+  },
+
+  isolate: (args) => {
+    const name = args[0];
+    const o = G.offices[name];
+    if (!o) { log(`Unknown office: ${name}. Use hq, ops, or sec.`, 'warn'); return; }
+    if (o.isolated) { log(`${name.toUpperCase()} already isolated.`, 'warn'); return; }
+    o.isolated = true;
+    o.online = false;
+    // Remove threats spreading from isolated
+    log(`${name.toUpperCase()} isolated. No spread possible. Office is offline.`, 'warn');
+    if (o.critical) { log('CRITICAL: HQ isolated → GAME OVER', 'danger'); triggerGameOver('HQ was isolated.'); }
+  },
+
+  repair: (args) => {
+    const name = args[0];
+    const o = G.offices[name];
+    if (!o) { log(`Unknown office: ${name}.`, 'warn'); return; }
+    if (G.power < 10) { log('Not enough power to repair.', 'danger'); return; }
+    o.health = Math.min(100, o.health + 25);
+    o.heat = Math.max(0, o.heat - 10);
+    G.power -= 10;
+    log(`Emergency repair on ${name.toUpperCase()}: +25 HP.`, 'success');
+  },
+
+  restart: (args) => {
+    const name = args[0];
+    const o = G.offices[name];
+    if (!o) { log(`Unknown office: ${name}.`, 'warn'); return; }
+    if (o.online && !o.isolated) { log(`${name.toUpperCase()} is already online.`, 'info'); return; }
+    if (G.power < 20) { log('Insufficient power to restart office.', 'danger'); return; }
+    o.online = true;
+    o.isolated = false;
+    o.health = Math.max(o.health, 20);
+    G.power -= 20;
+    log(`${name.toUpperCase()} restarted. Health: ${o.health.toFixed(0)}%`, 'success');
+  },
+
+  purge: (args) => {
+    const id = parseInt(args[0]);
+    if (isNaN(id)) { log('Usage: purge [threat_id]', 'warn'); return; }
+    const idx = G.threats.findIndex(t => t.id === id);
+    if (idx === -1) { log(`No threat with ID ${id} found.`, 'warn'); return; }
+    const t = G.threats[idx];
+    if (t.hidden) { log(`Cannot purge: threat ID ${id} not visible. Run scan or trace first.`, 'warn'); return; }
+    if (G.power < 12) { log('Insufficient power for purge.', 'danger'); return; }
+    // Firewall improves success chance
+    const successChance = G.firewallOn ? 0.85 : 0.65;
+    if (Math.random() < successChance) {
+      G.threats.splice(idx, 1);
+      // Reset DDoS load
+      if (t.type === 'ddos') G.offices[t.office].load = Math.max(30, G.offices[t.office].load - 30);
+      log(`Threat [ID:${id}] ${t.type.toUpperCase()} purged successfully.`, 'success');
+    } else {
+      log(`Purge failed! Threat [ID:${id}] is resisting. Try again.`, 'danger');
+    }
+    G.power -= 12;
+    G.heat = Math.min(100, G.heat + 5);
+  },
+
+  assign: (args) => {
+    const [type, office] = args;
+    if (!type || !office) { log('Usage: assign [engineers/security/cooling] [hq/ops/sec]', 'warn'); return; }
+    if (!G.crew[type]) { log(`Unknown crew type: ${type}`, 'warn'); return; }
+    if (!G.offices[office]) { log(`Unknown office: ${office}`, 'warn'); return; }
+    const free = G.crew[type].total - G.crew[type].assigned;
+    if (free <= 0) { log(`No free ${type} available.`, 'warn'); return; }
+    G.crew[type].assigned++;
+    G.offices[office].crew[type]++;
+    log(`Assigned 1 ${type} to ${office.toUpperCase()}.`, 'success');
+  },
+
+  unassign: (args) => {
+    const [type, office] = args;
+    if (!type || !office) { log('Usage: unassign [type] [office]', 'warn'); return; }
+    if (!G.crew[type] || !G.offices[office]) { log('Invalid type or office.', 'warn'); return; }
+    if (G.offices[office].crew[type] <= 0) { log(`No ${type} assigned to ${office.toUpperCase()}.`, 'warn'); return; }
+    G.crew[type].assigned--;
+    G.offices[office].crew[type]--;
+    log(`Removed 1 ${type} from ${office.toUpperCase()}.`, 'info');
+  },
+
+  overclock: (args) => {
+    const name = args[0];
+    const o = G.offices[name];
+    if (!o) { log('Usage: overclock [office]', 'warn'); return; }
+    if (!o.online) { log(`${name.toUpperCase()} is offline.`, 'warn'); return; }
+    o.load = Math.max(0, o.load - 20);
+    o.heat = Math.min(100, o.heat + 25);
+    log(`${name.toUpperCase()} overclocked: load -20%, heat +25%. Risky!`, 'warn');
+  },
+
+  'ddos-shield': () => {
+    if (G.power < 25) { log('Not enough power for DDoS shield.', 'danger'); return; }
+    G.threats = G.threats.filter(t => t.type !== 'ddos');
+    for (let k in G.offices) G.offices[k].load = Math.max(20, G.offices[k].load - 20);
+    G.power -= 25;
+    log('DDoS shield activated. All DDoS threats neutralized.', 'success');
+  },
+
+  reroute: (args) => {
+    const [from, to] = args;
+    if (!from || !to || !G.offices[from] || !G.offices[to]) { log('Usage: reroute [from] [to]', 'warn'); return; }
+    if (!G.offices[to].online) { log(`${to.toUpperCase()} is offline, cannot reroute to it.`, 'warn'); return; }
+    G.offices[to].load = Math.min(100, G.offices[to].load + G.offices[from].load * 0.5);
+    G.offices[from].load = Math.max(10, G.offices[from].load * 0.5);
+    log(`Traffic rerouted from ${from.toUpperCase()} to ${to.toUpperCase()}.`, 'success');
+  },
+};
+
+// ═══════════════════════════════════════════════
+//  INPUT HANDLER
+// ═══════════════════════════════════════════════
+document.getElementById('cmd-input').addEventListener('keydown', (e) => {
+  const inp = document.getElementById('cmd-input');
+
+  if (e.key === 'Enter') {
+    const raw = inp.value.trim();
+    if (!raw) return;
+    G.cmdHistory.unshift(raw);
+    G.cmdHistIdx = -1;
+    inp.value = '';
+    log(`> ${raw}`, 'cmd');
+    if (!G.running || G.gameover) { log('System not running.', 'warn'); return; }
+    const parts = raw.toLowerCase().split(/\s+/);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+    if (COMMANDS[cmd]) {
+      COMMANDS[cmd](args);
+    } else {
+      log(`Unknown command: ${cmd}. Type [help] for list.`, 'warn');
+    }
+    renderAll();
+  }
+
+  if (e.key === 'ArrowUp') {
+    G.cmdHistIdx = Math.min(G.cmdHistIdx + 1, G.cmdHistory.length - 1);
+    inp.value = G.cmdHistory[G.cmdHistIdx] || '';
+    e.preventDefault();
+  }
+  if (e.key === 'ArrowDown') {
+    G.cmdHistIdx = Math.max(G.cmdHistIdx - 1, -1);
+    inp.value = G.cmdHistIdx === -1 ? '' : G.cmdHistory[G.cmdHistIdx];
+    e.preventDefault();
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  GAME OVER
+// ═══════════════════════════════════════════════
+function triggerGameOver(reason) {
+  G.gameover = true;
+  G.running = false;
+  clearInterval(gameLoop);
+  clearInterval(uptimeInterval);
+  const elapsed = Math.floor((Date.now() - G.startTime) / 1000);
+  const mins = Math.floor(elapsed / 60).toString().padStart(2,'0');
+  const secs = (elapsed % 60).toString().padStart(2,'0');
+  const overlay = document.getElementById('overlay');
+  document.getElementById('overlay-title').className = 'gameover';
+  document.getElementById('overlay-title').textContent = 'SYSTEM FAILURE';
+  document.getElementById('overlay-msg').innerHTML =
+    `${reason}<br><br>Uptime: ${mins}:${secs} | Users: ${G.users} | Company Value: $${G.companyValue}<br><br>The system has been compromised.`;
+  overlay.classList.add('show');
+}
+
+function resetGame() {
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('log-area').innerHTML = '';
+  clearInterval(gameLoop);
+  clearInterval(uptimeInterval);
+  initState();
+  G.running = true;
+  log('System rebooted. All modules reinitialized.', 'system');
+  log('Stay vigilant. Threats are adapting.', 'warn');
+  renderAll();
+  gameLoop = setInterval(tick, 1000);
+  uptimeInterval = setInterval(updateUptime, 1000);
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════
+function renderAll() {
+  renderOffices();
+  renderResources();
+  renderCrew();
+  renderThreats();
+  renderStats();
+}
+
+function renderOffices() {
+  const c = document.getElementById('offices-container');
+  c.innerHTML = '';
+  for (let k in G.offices) {
+    const o = G.offices[k];
+    const stateClass = o.isolated ? 'isolated' : !o.online ? 'offline' : o.health < 30 ? 'critical' : o.health < 60 ? 'warning' : 'healthy';
+    const badgeClass = o.isolated ? 'badge-isolated' : !o.online ? 'badge-offline' : o.health < 30 ? 'badge-critical' : o.health < 60 ? 'badge-warning' : 'badge-online';
+    const badgeText = o.isolated ? 'ISOLATED' : !o.online ? 'OFFLINE' : o.health < 30 ? 'CRITICAL' : o.health < 60 ? 'WARN' : 'ONLINE';
+
+    const hpClass = o.health < 30 ? 'danger' : o.health < 60 ? 'warn' : '';
+    const loadColor = o.load > 80 ? '#ff2244' : o.load > 60 ? '#ffb000' : undefined;
+
+    const crewInfo = Object.entries(o.crew).filter(([,v]) => v > 0).map(([k,v]) => `${k[0].toUpperCase()}:${v}`).join(' ');
+    const threatCount = G.threats.filter(t => !t.hidden && t.office === k).length;
+
+    const div = document.createElement('div');
+    div.className = `office ${stateClass}`;
+    div.style.marginBottom = '8px';
+    div.innerHTML = `
+      <div class="office-header">
+        <span class="office-name">${o.label}</span>
+        <span class="office-badge ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="health-bar-wrap">
+        <span class="bar-label">HEALTH</span>
+        <div class="bar-track"><div class="bar-fill health ${hpClass}" style="width:${o.health}%"></div></div>
+        <span class="bar-val">${o.health.toFixed(0)}</span>
+      </div>
+      <div class="health-bar-wrap">
+        <span class="bar-label">LOAD</span>
+        <div class="bar-track"><div class="bar-fill load" style="width:${o.load}%;${loadColor?'background:'+loadColor:''}"></div></div>
+        <span class="bar-val">${o.load.toFixed(0)}</span>
+      </div>
+      <div class="health-bar-wrap">
+        <span class="bar-label">HEAT</span>
+        <div class="bar-track"><div class="bar-fill heat" style="width:${o.heat}%"></div></div>
+        <span class="bar-val">${o.heat.toFixed(0)}</span>
+      </div>
+      ${threatCount > 0 ? `<div class="office-threats">⚠ ${threatCount} active threat(s)</div>` : ''}
+      ${crewInfo ? `<div class="office-crew">crew: ${crewInfo}</div>` : ''}
+    `;
+    c.appendChild(div);
+  }
+}
+
+function renderResources() {
+  const pct = v => Math.max(0, Math.min(100, v));
+  setBar('bar-power', 'val-power', pct(G.power), G.power.toFixed(0));
+  setBar('bar-heat', 'val-heat', pct(G.heat), G.heat.toFixed(0));
+  const maxIncome = 50;
+  setBar('bar-income', 'val-income', pct((G.income / maxIncome) * 100), `+$${G.income}`);
+}
+
+function setBar(barId, valId, pct, valText) {
+  const b = document.getElementById(barId);
+  const v = document.getElementById(valId);
+  if (b) b.style.width = pct + '%';
+  if (v) v.textContent = valText;
+}
+
+function renderCrew() {
+  const c = document.getElementById('crew-container');
+  c.innerHTML = '';
+  for (let k in G.crew) {
+    const cr = G.crew[k];
+    const free = cr.total - cr.assigned;
+    const div = document.createElement('div');
+    div.className = 'crew-row';
+    div.innerHTML = `
+      <span class="crew-name">${k}</span>
+      <span class="crew-count">${free}/${cr.total} free</span>
+    `;
+    c.appendChild(div);
+  }
+}
+
+function renderThreats() {
+  const c = document.getElementById('threats-container');
+  const visible = G.threats.filter(t => !t.hidden);
+  const hidden = G.threats.filter(t => t.hidden).length;
+  if (visible.length === 0 && hidden === 0) {
+    c.innerHTML = '<div style="color:var(--dim);font-size:11px">No known threats.</div>';
+    return;
+  }
+  c.innerHTML = '';
+  visible.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'threat-row';
+    div.innerHTML = `
+      <span class="threat-name">[${t.id}] ${t.type.toUpperCase()}</span>
+      <span class="threat-location">${t.office.toUpperCase()}</span>
+      <span class="threat-spread">sev:${t.severity}</span>
+    `;
+    c.appendChild(div);
+  });
+  if (hidden > 0) {
+    const div = document.createElement('div');
+    div.className = 'threat-row';
+    div.innerHTML = `<span class="threat-hidden">... ${hidden} hidden threat(s). Run [scan]</span>`;
+    c.appendChild(div);
+  }
+}
+
+function renderStats() {
+  const satEl = document.getElementById('stat-sat');
+  const sat = G.satisfaction.toFixed(0);
+  satEl.textContent = sat + '%';
+  satEl.className = 'stat-value' + (sat < 30 ? ' danger' : sat < 60 ? ' warn' : '');
+
+  const valEl = document.getElementById('stat-value');
+  valEl.textContent = '$' + G.companyValue;
+  valEl.className = 'stat-value' + (G.companyValue < 200 ? ' danger' : G.companyValue < 500 ? ' warn' : '');
+
+  document.getElementById('stat-users').textContent = G.users;
+  
+  const pwEl = document.getElementById('stat-power');
+  pwEl.textContent = G.power.toFixed(0) + '%';
+  pwEl.className = 'stat-value' + (G.power < 20 ? ' danger' : G.power < 40 ? ' warn' : '');
+}
+
+function updateUptime() {
+  if (!G.running) return;
+  const elapsed = Math.floor((Date.now() - G.startTime) / 1000);
+  const mins = Math.floor(elapsed / 60).toString().padStart(2,'0');
+  const secs = (elapsed % 60).toString().padStart(2,'0');
+  document.getElementById('stat-uptime').textContent = `${mins}:${secs}`;
+}
+
+// ═══════════════════════════════════════════════
+//  LOGGING
+// ═══════════════════════════════════════════════
+function log(msg, type = 'info') {
+  const area = document.getElementById('log-area');
+  const now = new Date();
+  const ts = now.getHours().toString().padStart(2,'0') + ':' +
+              now.getMinutes().toString().padStart(2,'0') + ':' +
+              now.getSeconds().toString().padStart(2,'0');
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span class="log-time">[${ts}]</span><span class="log-msg ${type}">${msg}</span>`;
+  area.appendChild(div);
+  // Keep log to last 200 entries
+  while (area.children.length > 200) area.removeChild(area.firstChild);
+  area.scrollTop = area.scrollHeight;
+}
+
+// Click to focus input
+document.getElementById('log-area')?.addEventListener('click', () => {
+  document.getElementById('cmd-input').focus();
+});
+</script>
+</body>
+</html>
